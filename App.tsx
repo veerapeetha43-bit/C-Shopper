@@ -182,6 +182,46 @@ export default function App() {
     return () => window.removeEventListener('legal-accepted', onAccept);
   }, []);
 
+  // --- Automated error telemetry (feeds ops dashboard + self-heal loop) ---
+  useEffect(() => {
+    const seen = new Map<string, number>();
+    const report = (message: string, stack?: string) => {
+      if (!message || /ResizeObserver|Script error/i.test(message)) return;
+      const now = Date.now();
+      const last = seen.get(message) || 0;
+      if (now - last < 60000) return; // max 1 report per message per minute
+      seen.set(message, now);
+      try {
+        const email = getSession()?.email || null;
+        fetch(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/app_errors`, {
+          method: 'POST',
+          headers: {
+            apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+            Prefer: 'return=minimal',
+          },
+          body: JSON.stringify({
+            message: message.slice(0, 500),
+            stack: (stack || '').slice(0, 2000),
+            url: window.location.href.slice(0, 300),
+            user_agent: navigator.userAgent.slice(0, 300),
+            app_version: 'stable',
+            user_email: email,
+          }),
+        }).catch(() => {});
+      } catch { /* never break the app for telemetry */ }
+    };
+    const onError = (e: ErrorEvent) => report(e.message || 'Unknown error', e.error?.stack);
+    const onRejection = (e: PromiseRejectionEvent) => report('Unhandled rejection: ' + (e.reason?.message || String(e.reason)), e.reason?.stack);
+    window.addEventListener('error', onError);
+    window.addEventListener('unhandledrejection', onRejection);
+    return () => {
+      window.removeEventListener('error', onError);
+      window.removeEventListener('unhandledrejection', onRejection);
+    };
+  }, []);
+
   // --- Auth state subscription ---
   useEffect(() => {
     return onAuthChange((s) => {
