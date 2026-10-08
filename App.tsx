@@ -28,6 +28,7 @@ import { buildSeedCatalog, SEED_MARKER_KEY } from './services/seed';
 import { checkMessageSafety, stripReceiptPII, MODERATION_WARNING } from './services/moderation';
 import { scanReceiptViaWorker, scanReceipt, hasApiKey } from './services/gemini';
 import { getSession, signIn, signOut, onAuthChange } from './services/auth';
+import { reconcileGroups } from './services/groupSync';
 import type {
   Store, ReceiptItem, GlobalPriceEntry, CommunityGroup, GroupComment,
   ItemReview, AppNotification, UserSubscription,
@@ -159,6 +160,7 @@ export default function App() {
 
   const syncTimer = useRef<number | null>(null);
   const lastCommunitySync = useRef(0);
+  const reconciledGroupIds = useRef<Set<string> | null>(null);
   const lastDealsSync = useRef(0);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -221,8 +223,16 @@ export default function App() {
     if (!isCloudEnabled()) return;
     if (syncTimer.current) window.clearTimeout(syncTimer.current);
     syncTimer.current = window.setTimeout(() => {
+      // Upload only groups created under the current login: this never
+      // resurrects server-deleted ghosts and never clobbers server rows'
+      // creator_id with this device's id. Server-origin copies ('cloud')
+      // are already on the server; sync-down is their update path.
+      const myEmail = getSession()?.email || '';
       syncUpToCloud({
-        receipts, globalPrices, favorites, groups, groupComments, itemReviews,
+        receipts, globalPrices, favorites,
+        groups: groups.filter((g) =>
+          g.creatorId === 'me' && (!g.creatorEmail || !myEmail || g.creatorEmail === myEmail)),
+        groupComments, itemReviews,
         userName: 'Shopper',
       });
     }, 4000);
@@ -312,32 +322,18 @@ export default function App() {
       if (cancelled) return;
       if (cloudGroups.length) {
         setGroups((prev) => {
-          const cloudIds = new Set(cloudGroups.map((cg) => cg.id));
-          // Prune local cloud-origin groups that no longer exist on the server,
-          // then merge in any new ones. Local-only groups (created offline) stay.
-          const pruned = prev.filter((g) => {
-            if (g.creatorId !== 'cloud') return true;
-            return cloudIds.has(g.id);
-          });
-          const haveIds = new Set(pruned.map((g) => g.id));
-          const haveNames = new Set(pruned.map((g) => g.name.trim().toLowerCase()));
-          const additions: CommunityGroup[] = [];
-          for (const cg of cloudGroups) {
-            if (haveIds.has(cg.id) || haveNames.has(cg.name.trim().toLowerCase())) continue;
-            haveIds.add(cg.id);
-            additions.push({
-              id: cg.id, name: cg.name, description: cg.description || 'A community hub.',
-              creatorId: 'cloud', members: [], pendingRequests: [],
-              isPublic: true, storeId: cg.store_id || undefined, keywords: cg.keywords || [],
-            });
-          }
-          return additions.length ? [...additions, ...pruned] : pruned;
+          const reconciled = reconcileGroups(prev, cloudGroups, (session as any)?.email || '');
+          reconciledGroupIds.current = new Set(reconciled.map((g) => g.id));
+          return reconciled;
         });
         const comments = await fetchGroupComments(cloudGroups.map((cg) => cg.id));
         if (cancelled) return;
         if (comments.length) {
           setGroupComments((prev) => {
-            const have = new Set(prev.map((c) => c.id));
+            // Drop comments belonging to groups that no longer exist (pruned ghosts).
+            const ids = reconciledGroupIds.current;
+            const live = ids ? prev.filter((c) => ids.has(c.groupId)) : prev;
+            const have = new Set(live.map((c) => c.id));
             const additions: GroupComment[] = [];
             for (const cc of comments) {
               if (have.has(cc.id)) continue;
@@ -350,7 +346,9 @@ export default function App() {
                 imageUrl: cc.image_url || undefined,
               });
             }
-            return additions.length ? [...prev, ...additions] : prev;
+            const prunedCount = prev.length - live.length;
+            if (!additions.length && !prunedCount) return prev;
+            return [...live, ...additions];
           });
         }
       }
