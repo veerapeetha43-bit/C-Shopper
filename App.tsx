@@ -753,6 +753,14 @@ export default function App() {
             <h1 className="text-lg font-black tracking-tight">C-Shopper</h1>
             <span className="text-[10px] font-bold uppercase tracking-widest text-white/60">Price Scout</span>
           </div>
+          {/* Desktop nav (lg and up) */}
+          <nav className="hidden lg:flex items-center gap-1">
+            <DesktopNavLink icon={<LayoutGrid size={16} />} label="Home" active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
+            <DesktopNavLink icon={<Search size={16} />} label="Search" active={activeTab === 'tracker'} onClick={() => setActiveTab('tracker')} />
+            <DesktopNavLink icon={<Camera size={16} />} label="Scan" active={activeTab === 'upload'} onClick={() => setActiveTab('upload')} />
+            <DesktopNavLink icon={<Tag size={16} />} label="Deals" active={activeTab === 'deals'} onClick={() => setActiveTab('deals')} />
+            <DesktopNavLink icon={<Users size={16} />} label="Community" active={activeTab === 'community'} onClick={() => setActiveTab('community')} />
+          </nav>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setActiveTab('deals')}
@@ -1300,6 +1308,18 @@ function MobileNavLink({ icon, label, active, onClick }: any) {
     <button onClick={onClick} className="flex flex-col items-center gap-1 min-w-[56px]">
       <span className={active ? 'text-[#E31837]' : 'text-slate-400'}>{icon}</span>
       <span className={`text-[9px] font-bold uppercase tracking-wide ${active ? 'text-[#E31837]' : 'text-slate-400'}`}>{label}</span>
+    </button>
+  );
+}
+
+function DesktopNavLink({ icon, label, active, onClick }: any) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wide transition-all ${active ? 'bg-white/20 text-white' : 'text-white/60 hover:text-white hover:bg-white/10'}`}
+    >
+      {icon}
+      {label}
     </button>
   );
 }
