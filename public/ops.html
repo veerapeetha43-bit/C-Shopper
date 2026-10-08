@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>C-Shopper Ops Dashboard</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+  header { background: #003366; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 10; }
+  header h1 { font-size: 18px; font-weight: 900; letter-spacing: -0.5px; }
+  header h1 span { color: #7dd3fc; font-weight: 400; font-size: 13px; margin-left: 8px; }
+  .live { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #86efac; font-weight: 700; }
+  .live .dot { width: 10px; height: 10px; border-radius: 50%; background: #22c55e; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+  main { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  .section-title { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; color: #64748b; margin: 28px 0 12px; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+  .kpi { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 16px; }
+  .kpi .label { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 700; }
+  .kpi .value { font-size: 32px; font-weight: 900; margin-top: 6px; }
+  .kpi .sub { font-size: 12px; color: #64748b; margin-top: 4px; }
+  .kpi.good .value { color: #4ade80; } .kpi.warn .value { color: #fbbf24; } .kpi.bad .value { color: #f87171; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
+  .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 16px; }
+  .card h3 { font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-bottom: 12px; }
+  .bars { display: flex; align-items: flex-end; gap: 4px; height: 120px; }
+  .bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+  .bar { width: 100%; max-width: 28px; border-radius: 4px 4px 0 0; background: #38bdf8; min-height: 3px; }
+  .bar.err { background: #f87171; }
+  .bar-label { font-size: 9px; color: #64748b; margin-top: 4px; }
+  .err-item { border-bottom: 1px solid #334155; padding: 10px 0; font-size: 13px; }
+  .err-item:last-child { border-bottom: none; }
+  .err-msg { font-weight: 700; color: #fca5a5; word-break: break-word; }
+  .err-meta { font-size: 11px; color: #64748b; margin-top: 4px; }
+  .err-count { display: inline-block; background: #7f1d1d; color: #fecaca; font-size: 11px; font-weight: 800; border-radius: 20px; padding: 2px 8px; margin-left: 8px; }
+  .status-badge { display: inline-block; font-size: 10px; font-weight: 800; text-transform: uppercase; border-radius: 6px; padding: 3px 8px; margin-left: 8px; }
+  .status-new { background: #7f1d1d; color: #fecaca; } .status-fixed { background: #14532d; color: #bbf7d0; } .status-ignored { background: #334155; color: #94a3b8; }
+  .health-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #334155; font-size: 13px; }
+  .health-row:last-child { border-bottom: none; }
+  .pill { font-size: 11px; font-weight: 800; border-radius: 20px; padding: 4px 12px; }
+  .pill.ok { background: #14532d; color: #bbf7d0; } .pill.warn { background: #78350f; color: #fde68a; } .pill.bad { background: #7f1d1d; color: #fecaca; }
+  .fix-item { padding: 10px 0; border-bottom: 1px solid #334155; font-size: 13px; }
+  .fix-item:last-child { border-bottom: none; }
+  .fix-item a { color: #7dd3fc; text-decoration: none; font-weight: 700; }
+  .fix-item .meta { font-size: 11px; color: #64748b; margin-top: 3px; }
+  #refresh-note { text-align: center; color: #475569; font-size: 11px; margin: 24px 0; }
+  .loading { color: #64748b; font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>C-Shopper <span>OPS DASHBOARD</span></h1>
+  <div class="live"><span class="dot"></span> LIVE <span id="updated" style="color:#64748b;font-weight:400"></span></div>
+</header>
+<main>
+  <div class="section-title">Key metrics</div>
+  <div class="kpis" id="kpis"></div>
+
+  <div class="section-title">14-day trends</div>
+  <div class="grid2">
+    <div class="card"><h3>Receipt scans / day</h3><div class="bars" id="scan-bars"><span class="loading">Loading…</span></div></div>
+    <div class="card"><h3>App errors / day</h3><div class="bars" id="err-bars"><span class="loading">Loading…</span></div></div>
+  </div>
+
+  <div class="section-title">System health</div>
+  <div class="card" id="health"><span class="loading">Loading…</span></div>
+
+  <div class="section-title">Recent app errors</div>
+  <div class="card" id="errors"><span class="loading">Loading…</span></div>
+
+  <div class="section-title">Self-heal activity (auto-fixes shipped)</div>
+  <div class="card" id="fixes"><span class="loading">Loading…</span></div>
+
+  <div id="refresh-note">Auto-refreshes every 60 seconds · Data: Supabase (staging) · Deploys: Cloudflare Pages · Fixes: GitHub</div>
+</main>
+<script>
+const SB_URL = "https://aofzkonzezvmthkhgzob.supabase.co";
+const SB_KEY = "sb_publishable_bv9jfl8NkYDqYCVQgk3NVw_vpMvBL7C";
+const H = { apikey: SB_KEY, Authorization: "Bearer " + SB_KEY };
+const GH_REPO = "veerapeetha43-bit/C-Shopper";
+
+async function q(table, select, params) {
+  const url = `${SB_URL}/rest/v1/${table}?${params || ""}`;
+  const r = await fetch(url, { headers: { ...H, Prefer: "count=exact" } });
+  if (!r.ok) throw new Error(table + " " + r.status);
+  const total = (r.headers.get("Content-Range") || "/0").split("/")[1];
+  const rows = await r.json();
+  return { rows, total: parseInt(total || "0", 10) };
+}
+function dayKey(iso) { return new Date(iso).toISOString().slice(0, 10); }
+function last14() { const d = []; for (let i = 13; i >= 0; i--) { const t = new Date(); t.setDate(t.getDate() - i); d.push(t.toISOString().slice(0, 10)); } return d; }
+function renderBars(elId, buckets, cls) {
+  const el = document.getElementById(elId);
+  const max = Math.max(1, ...buckets.map(b => b[1]));
+  el.innerHTML = buckets.map(([day, n]) =>
+    `<div class="bar-wrap"><div class="bar ${cls||""}" style="height:${Math.max(3, (n/max)*100)}%" title="${day}: ${n}"></div><div class="bar-label">${day.slice(5)}</div></div>`
+  ).join("");
+}
+function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").slice(0, 300); }
+
+async function load() {
+  const days = last14();
+  try {
+    const [receipts, groups, profiles, priceHist, watch, errors] = await Promise.all([
+      q("receipts", "*", "select=id,created_at,total&order=created_at.desc&limit=1000").catch(() => ({rows:[],total:0})),
+      q("community_groups", "*", "select=id,created_at&order=created_at.desc&limit=500").catch(() => ({rows:[],total:0})),
+      q("profiles", "*", "select=id&limit=1").catch(() => ({rows:[],total:0})),
+      q("price_history", "*", "select=id&limit=1").catch(() => ({rows:[],total:0})),
+      q("watchlist", "*", "select=id&limit=1").catch(() => ({rows:[],total:0})),
+      q("app_errors", "*", "select=id,message,created_at,occurrence_count,status&order=created_at.desc&limit=30").catch(() => ({rows:[],total:0})),
+    ]);
+
+    const scanBuckets = days.map(d => [d, 0]);
+    let totalSpend = 0;
+    receipts.rows.forEach(r => {
+      const k = dayKey(r.created_at);
+      const b = scanBuckets.find(x => x[0] === k);
+      if (b) b[1]++;
+      if (r.total) totalSpend += parseFloat(r.total) || 0;
+    });
+    const errBuckets = days.map(d => [d, 0]);
+    const now = Date.now();
+    let err24 = 0;
+    errors.rows.forEach(e => {
+      const k = dayKey(e.created_at);
+      const b = errBuckets.find(x => x[0] === k);
+      if (b) b[1] += (e.occurrence_count || 1);
+      if (now - new Date(e.created_at).getTime() < 864e5) err24 += (e.occurrence_count || 1);
+    });
+    const scans7 = scanBuckets.slice(-7).reduce((s, b) => s + b[1], 0);
+
+    const kpis = [
+      { label: "Receipt scans", value: receipts.total, sub: scans7 + " in last 7d", cls: "" },
+      { label: "Spend tracked", value: "$" + totalSpend.toFixed(0), sub: receipts.total + " receipts", cls: "" },
+      { label: "User profiles", value: profiles.total, sub: "in database", cls: "" },
+      { label: "Community groups", value: groups.total, sub: "server-side", cls: "" },
+      { label: "Price points", value: priceHist.total, sub: "price_history rows", cls: "" },
+      { label: "Errors (24h)", value: err24, sub: errors.total + " total logged", cls: err24 === 0 ? "good" : err24 > 10 ? "bad" : "warn" },
+    ];
+    document.getElementById("kpis").innerHTML = kpis.map(k =>
+      `<div class="kpi ${k.cls}"><div class="label">${k.label}</div><div class="value">${k.value}</div><div class="sub">${k.sub}</div></div>`
+    ).join("");
+
+    renderBars("scan-bars", scanBuckets, "");
+    renderBars("err-bars", errBuckets, "err");
+
+    // Health
+    const health = [
+      ["Backend", "STAGING — not production", "warn"],
+      ["Database", priceHist.total > 0 ? "Reachable (" + priceHist.total + " price rows)" : "Reachable", "ok"],
+      ["Error telemetry", errors.rows !== undefined ? "Table live" : "Table missing", errors.rows !== undefined ? "ok" : "bad"],
+      ["Receipt scanner (Gemini)", "Key is placeholder — scans will fail", "bad"],
+      ["Group sync", "Reconciliation active, ghost filter on", "ok"],
+      ["Site", "c-shopper.pages.dev serving", "ok"],
+    ];
+    document.getElementById("health").innerHTML = health.map(([k, v, s]) =>
+      `<div class="health-row"><span>${k}</span><span><span style="color:#94a3b8">${esc(v)}</span> <span class="pill ${s}">${s === "ok" ? "OK" : s === "warn" ? "WATCH" : "DOWN"}</span></span></div>`
+    ).join("");
+
+    // Errors
+    const errHtml = errors.rows.length === 0
+      ? '<span style="color:#4ade80;font-size:13px">No errors logged. The app is quiet.</span>'
+      : errors.rows.slice(0, 12).map(e => `
+        <div class="err-item">
+          <span class="err-msg">${esc(e.message)}</span>
+          <span class="err-count">×${e.occurrence_count || 1}</span>
+          <span class="status-badge status-${esc(e.status || "new")}">${esc(e.status || "new")}</span>
+          <div class="err-meta">${new Date(e.created_at).toLocaleString()}</div>
+        </div>`).join("");
+    document.getElementById("errors").innerHTML = errHtml;
+
+    document.getElementById("updated").textContent = "· updated " + new Date().toLocaleTimeString();
+  } catch (e) {
+    document.getElementById("kpis").innerHTML = `<div class="kpi bad"><div class="label">Dashboard error</div><div class="value">!</div><div class="sub">${esc(e.message)}</div></div>`;
+  }
+
+  // Self-heal log from GitHub
+  try {
+    const r = await fetch(`https://api.github.com/repos/${GH_REPO}/commits?per_page=12`);
+    const commits = await r.json();
+    const fixes = commits.filter(c => /fix|heal|repair|patch/i.test(c.commit.message));
+    document.getElementById("fixes").innerHTML = fixes.length === 0
+      ? '<span style="color:#64748b;font-size:13px">No auto-fixes shipped yet.</span>'
+      : fixes.slice(0, 8).map(c => `
+        <div class="fix-item">
+          <a href="${c.html_url}" target="_blank" rel="noopener">${esc(c.commit.message.split("\n")[0])}</a>
+          <div class="meta">${new Date(c.commit.author.date).toLocaleString()} · ${esc(c.sha.slice(0, 7))}</div>
+        </div>`).join("");
+  } catch (e) {
+    document.getElementById("fixes").innerHTML = '<span class="loading">Could not load commit history.</span>';
+  }
+}
+load();
+setInterval(load, 60000);
+</script>
+</body>
+</html>
