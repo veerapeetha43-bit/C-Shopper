@@ -139,7 +139,7 @@ export default function App() {
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(() => localStorage.getItem('ws_selected_store'));
   const [homeStoreId, setHomeStoreId] = useState<string | null>(() => localStorage.getItem('ws_home_store'));
   const [communityCatalogReady, setCommunityCatalogReady] = useState(false);
-  const [isStoreModalOpen, setIsStoreModalOpen] = useState(() => !localStorage.getItem('ws_selected_store'));
+  const [isStoreModalOpen, setIsStoreModalOpen] = useState(() => !localStorage.getItem('ws_selected_store') && !localStorage.getItem('ws_home_store'));
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const [isCreateGroupModalOpen, setIsCreateGroupModalOpen] = useState(false);
   const [isShareConsentOpen, setIsShareConsentOpen] = useState(false);
@@ -407,6 +407,7 @@ export default function App() {
 
   const handleSetHomeStore = (id: string) => {
     setHomeStoreId(id);
+    setSelectedStoreId(id);
     try { localStorage.setItem('ws_home_store', id); } catch { /* noop */ }
     saveHomeStoreId(id).catch(() => {});
     const s = stores.find((x) => x.id === id);
@@ -1426,7 +1427,7 @@ function PriceCard({ tier, price, features, highlight, freeMode, onSelect, onFre
 // PricingView — transliterated from bundle cL @46638 (MODIFIED: free launch)
 // NOTE: `ph` is a module-level constant in the bundle (the FREE_LAUNCH flag).
 // ---------------------------------------------------------------------------
-declare const ph: boolean;
+const ph: boolean = FREE_LAUNCH;
 function PricingView({ onSelectPlan, onFreeInfo }: any) {
   return (
     <div className="animate-fade-in space-y-10 text-center py-6">
@@ -1713,9 +1714,10 @@ function TrackerView({ prices, searchQuery, onSearchChange, favorites, receipts,
 // ---------------------------------------------------------------------------
 // ProfileView — transliterated from bundle lL @46257 (MODIFIED: free-launch
 // status card, FREE tier labels, Receipt History -> 'history' tab, Send
-// Feedback row). NOTE: `Bu` is a module-level imported profile image asset.
+// Feedback row). NOTE: `Bu` was a module-level imported profile image asset
+// in the bundle; reconstructed here as the default avatar.
 // ---------------------------------------------------------------------------
-declare const Bu: string;
+const Bu: string = DEFAULT_AVATAR;
 function ProfileView({ subscription, trialDaysLeft, isExpired, handleLogout, setActiveTab, session, onOpenLegal, onOpenModeration, onOpenFeedback }: any) {
   return (
     <div className="animate-fade-in space-y-4 max-w-4xl mx-auto">
