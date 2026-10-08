@@ -1,0 +1,7 @@
+{
+  "name": "Copy of Copy of Copy of C-Shopper",
+  "description": "A community-driven price tracking application for warehouse club members. Track item prices, find stores by ZIP, upload receipts to monitor for price drops, and visualize spending patterns.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
