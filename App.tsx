@@ -27,6 +27,7 @@ import { loadStores, shortStoreName } from './services/storeData';
 import { buildSeedCatalog, SEED_MARKER_KEY } from './services/seed';
 import { checkMessageSafety, stripReceiptPII, MODERATION_WARNING } from './services/moderation';
 import { scanReceiptViaWorker, scanReceipt, hasApiKey } from './services/gemini';
+import { getSession, signIn, signOut, onAuthChange } from './services/auth';
 import type {
   Store, ReceiptItem, GlobalPriceEntry, CommunityGroup, GroupComment,
   ItemReview, AppNotification, UserSubscription,
@@ -71,15 +72,7 @@ const loadJSON = <T,>(key: string, fallback: T): T => {
 };
 
 // --- Session helpers (local name+email auth; Supabase Auth is a roadmap item)
-const SESSION_KEY = 'ws_session';
 const LEGAL_KEY = 'ws_legal_consent';
-
-function loadSession() {
-  try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
-}
 
 function loadLegalConsent() {
   try {
@@ -96,8 +89,8 @@ function loadLegalConsent() {
 export default function App() {
   // --- Legal gate & auth ---
   const [isLegalAccepted, setIsLegalAccepted] = useState(() => loadLegalConsent() !== null);
-  const [session, setSession] = useState(() => loadSession());
-  const [isLoggedIn, setIsLoggedIn] = useState(() => loadSession() !== null);
+  const [session, setSession] = useState(() => getSession());
+  const [isLoggedIn, setIsLoggedIn] = useState(() => getSession() !== null);
 
   // --- Navigation ---
   const [activeTab, setActiveTab] = useState<'dashboard' | 'stores' | 'tracker' | 'pricing' | 'upload' | 'community' | 'profile' | 'favorites' | 'deals' | 'history'>('dashboard');
@@ -185,6 +178,14 @@ export default function App() {
     const onAccept = () => setIsLegalAccepted(true);
     window.addEventListener('legal-accepted', onAccept);
     return () => window.removeEventListener('legal-accepted', onAccept);
+  }, []);
+
+  // --- Auth state subscription ---
+  useEffect(() => {
+    return onAuthChange((s) => {
+      setSession(s);
+      setIsLoggedIn(s !== null);
+    });
   }, []);
 
   // --- Persist everything to localStorage ---
@@ -311,8 +312,15 @@ export default function App() {
       if (cancelled) return;
       if (cloudGroups.length) {
         setGroups((prev) => {
-          const haveIds = new Set(prev.map((g) => g.id));
-          const haveNames = new Set(prev.map((g) => g.name.trim().toLowerCase()));
+          const cloudIds = new Set(cloudGroups.map((cg) => cg.id));
+          // Prune local cloud-origin groups that no longer exist on the server,
+          // then merge in any new ones. Local-only groups (created offline) stay.
+          const pruned = prev.filter((g) => {
+            if (g.creatorId !== 'cloud') return true;
+            return cloudIds.has(g.id);
+          });
+          const haveIds = new Set(pruned.map((g) => g.id));
+          const haveNames = new Set(pruned.map((g) => g.name.trim().toLowerCase()));
           const additions: CommunityGroup[] = [];
           for (const cg of cloudGroups) {
             if (haveIds.has(cg.id) || haveNames.has(cg.name.trim().toLowerCase())) continue;
@@ -323,7 +331,7 @@ export default function App() {
               isPublic: true, storeId: cg.store_id || undefined, keywords: cg.keywords || [],
             });
           }
-          return additions.length ? [...additions, ...prev] : prev;
+          return additions.length ? [...additions, ...pruned] : pruned;
         });
         const comments = await fetchGroupComments(cloudGroups.map((cg) => cg.id));
         if (cancelled) return;
@@ -408,10 +416,7 @@ export default function App() {
   };
 
   const handleLogout = () => {
-    try {
-      localStorage.removeItem(SESSION_KEY);
-      localStorage.removeItem('ws_logged_in');
-    } catch { /* noop */ }
+    signOut();
     setSession(null);
     setIsLoggedIn(false);
     setActiveTab('dashboard');
@@ -737,15 +742,7 @@ export default function App() {
   }
 
   if (!isLoggedIn) {
-    return <LoginScreen onLogin={(name: string, email: string) => {
-      const s = { name: name.trim(), email: email.trim().toLowerCase(), signedInAt: new Date().toISOString() };
-      try {
-        localStorage.setItem(SESSION_KEY, JSON.stringify(s));
-        localStorage.setItem('ws_logged_in', 'true');
-      } catch { /* noop */ }
-      setSession(s);
-      setIsLoggedIn(true);
-    }} />;
+    return <LoginScreen />;
   }
 
   return (
@@ -1801,6 +1798,7 @@ function CommunityHub({ groups, activeGroupId, setActiveGroupId, groupComments, 
   const [commentText, setCommentText] = useState("");
   const [showEmoji, setShowEmoji] = useState(false);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [groupSearch, setGroupSearch] = useState("");
 
   const activeGroup = groups.find((g: any) => g.id === activeGroupId);
   const mutedIds = (mutedUsers && activeGroupId && mutedUsers[activeGroupId]) || [];
@@ -1808,6 +1806,7 @@ function CommunityHub({ groups, activeGroupId, setActiveGroupId, groupComments, 
 
   const orderedGroups = useMemo(() => {
     const rank = (g: any) => g.storeId && g.storeId === selectedStoreId ? 0 : g.storeId ? 2 : 1;
+    const q = groupSearch.trim().toLowerCase();
     return [
       // Private groups: visible only to members, and hidden from other
       // local-login identities via creatorEmail.
@@ -1816,8 +1815,18 @@ function CommunityHub({ groups, activeGroupId, setActiveGroupId, groupComments, 
           ? true
           : (g.members || []).includes("me") && !(g.creatorEmail && sessionEmail && g.creatorEmail !== sessionEmail)
       ),
-    ].sort((a: any, b: any) => rank(a) - rank(b));
-  }, [groups, selectedStoreId, sessionEmail]);
+    ]
+      .filter((g: any) => {
+        if (!q) return true;
+        const haystack = [
+          g.name || "",
+          g.description || "",
+          ...(g.keywords || []),
+        ].join(" ").toLowerCase();
+        return haystack.includes(q);
+      })
+      .sort((a: any, b: any) => rank(a) - rank(b));
+  }, [groups, selectedStoreId, sessionEmail, groupSearch]);
 
   const storeNameOf = (id: string) => stores?.find((s: any) => s.id === id)?.name;
 
@@ -1888,6 +1897,31 @@ function CommunityHub({ groups, activeGroupId, setActiveGroupId, groupComments, 
           <button onClick={onOpenCreateGroup} className="flex items-center gap-2 px-4 py-2.5 bg-[#E31837] text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95"><Plus size={14} /> Create group</button>
         </div>
       </div>
+      <div className="relative">
+        <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+        <input
+          value={groupSearch}
+          onChange={(e) => setGroupSearch(e.target.value)}
+          placeholder="Search groups by name or keyword…"
+          className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-medium placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#E31837]/30 focus:border-[#E31837]"
+        />
+        {groupSearch && (
+          <button
+            onClick={() => setGroupSearch("")}
+            className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-slate-100 text-slate-400"
+            aria-label="Clear search"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
+      {groupSearch.trim() && orderedGroups.length === 0 ? (
+        <div className="bg-white p-10 rounded-[2rem] border shadow-sm text-center">
+          <Search size={28} className="mx-auto mb-3 text-slate-300" />
+          <p className="text-sm font-bold">No groups match "{groupSearch.trim()}"</p>
+          <p className="text-xs text-slate-500 mt-1">Try a different keyword, or create a new group.</p>
+        </div>
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {orderedGroups.map((g: any) => (
           <div key={g.id} className="bg-white p-6 rounded-[2rem] border shadow-sm flex flex-col justify-between h-full group hover:shadow-xl transition-all border-transparent hover:border-slate-100">
@@ -1912,6 +1946,7 @@ function CommunityHub({ groups, activeGroupId, setActiveGroupId, groupComments, 
           </div>
         ))}
       </div>
+      )}
     </div>
   );
 }
